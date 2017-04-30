@@ -1,0 +1,156 @@
+# Machine Learning Course Project
+_Aurélien JEAN_
+
+_April 30, 2017_
+
+## Overview
+
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to
+collect a large amount of data about personal activity relatively inexpensively.
+
+An experience has been done using accelerometers on the belt, forearm, arm, and 
+dumbell of 6 different participants. For that experience, those 6 young and healthy people
+were asked to perform one set of 10 repetitions of the Unilateral Dumbbell Biceps 
+Curl in five different fashions: exactly according to the specification (Class A), 
+throwing the elbows to the front (Class B), lifting the dumbbell only halfway 
+(Class C), lowering the dumbbell only halfway (Class D) and throwing the hips 
+to the front (Class E).
+
+The goal of this project is to predict the manner in which they did the exercise.
+We first analyze the data collected by that kind of devices. Then, we show that 
+the `random forest`method is the best model to predict the "classe" they did 
+their exercise. Finally, we will use our prediction model to predict 20 
+different test cases.
+
+## Data set
+
+The data for this project come from the [Groupware site](http://groupware.les.inf.puc-rio.br/har)
+
+You can find the *train data set* [here](https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv)
+and the *test data set* [here](https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv)
+
+## Dowload data, data analysis and cleaning
+
+```{r download, echo = TRUE}
+# Verify if a HAR folder exist and replace it by a new one if yes
+if(!dir.exists("./HAR")){
+        dir.create("./HAR")
+} else {
+        unlink("HAR", recursive = TRUE)
+        dir.create("./HAR")
+}
+setwd("./HAR")
+
+# Dowload the train and test data set and save it in CSV files
+url1 <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+url2 <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+download.file(url1, destfile = "train_set.csv")
+download.file(url2, destfile = "test_set.csv")
+train_data <- read.csv("train_set.csv", na.string = c("NA", "", "#DIV/0!"))
+test_data <- read.csv("test_set.csv", na.string = c("NA", "", "#DIV/0!"))
+```
+
+Now we have dowloaded the two data, we can focus on the train data.
+
+Analysing the data we just find that several column contains "NA" value. Some of
+them even have more than  97% of NA value. 
+
+To set our model on clean data we decide to remove those columns, which can't be good predictors.
+
+What's more we decide to remove the 7 first columns which correpond to the user
+and which will be useless for building our model.
+
+```{r clean, echo = TRUE}
+# Find and remove the column with about 97% of "NA" value
+percNA <- function(x) {sum(is.na(x))/length(x)*100}
+colNA <- apply(train_data,2, percNA)
+minpercNA <- min(colNA[colNA != 0])
+cln_na <- train_data[, colNA < minpercNA]
+cln_train_ds <- cln_na[,-c(1:7)]
+```
+
+## Build a prediction model
+With that clean data set for training data we can start to establish our model.
+
+To do that, we first divide the data in an new training set (representing 60% of the data),
+on which we will train our model and then an new testing set (representing 40% of the data)
+to test our model
+
+```{r create_part, echo = TRUE, message = FALSE, warning = FALSE}
+library(caret)
+set.seed(123)
+partition <- createDataPartition(cln_train_ds$classe, p = 0.6, list = FALSE)
+train_set <- cln_train_ds[partition,]
+test_set <- cln_train_ds[-partition,]
+```
+
+To *avoid overfitting* the model and improve accuracy, we will use a *k-fold cross-validation*.
+In our study _k will set to 5_.
+
+```{r cross_validation, echo = TRUE}
+ctrl <- trainControl(method = "cv", number = 5)
+```
+
+Now we can build our model. To build it we have tested the 3 following method :
+
+* Regression Trees (rpart)
+* Gradient boosted trees (gbm)
+* random forests (rf)
+
+### Regression Tress
+
+```{r rpart_modele, echo = TRUE, message = FALSE, warning = FALSE}
+mod_rpart <- train(classe~., data= train_set, method = "rpart", trControl = ctrl)
+mod_rpart
+```
+
+```{r confusion1, echo = TRUE, message = FALSE, warning = FALSE}
+pred_rpart <- predict(mod_rpart, newdata= test_set)
+accuracy_rpart <- confusionMatrix(pred_rpart,test_set$classe)$overall[1]
+accuracy_rpart
+```
+
+### Gradient bosted trees
+
+```{r glm_modele, echo = TRUE, message = FALSE, warning = FALSE}
+mod_gbm <- train(classe~., data= train_set, method = "gbm", trControl = ctrl, verbose = FALSE)
+mod_gbm
+```
+
+```{r confusion2, echo = TRUE, message = FALSE, warning = FALSE}
+pred_gbm <- predict(mod_gbm, newdata= test_set)
+accuracy_gbm <- confusionMatrix(pred_gbm,test_set$classe)$overall[1]
+accuracy_gbm
+```
+
+### Random Forest
+```{r rf_modele, echo = TRUE, message = FALSE, warning = FALSE}
+mod_rf <- train(classe~., data= train_set, method = "rf", trControl = ctrl)
+mod_rf
+```
+
+```{r confusion3, echo = TRUE, message = FALSE, warning = FALSE}
+pred_rf <- predict(mod_rf, newdata= test_set)
+accuracy_rf <- confusionMatrix(pred_rf,test_set$classe)$overall[1]
+accuracy_rf
+```
+We see that the accuracy of Random Forest model is about `r round(accuracy_rf*100,1)`%, 
+(whereas the other are `r round(accuracy_rpart*100,1)`% and `r round(accuracy_gbm*100,1)`%
+, respecvtively for Regression Tress and Gradient bosted trees.
+
+The *Random forest model* is more accurate so we conclude that we have to use it for
+predicting the classes. With that model the expected out of sample error is about
+`r round(100 - accuracy_rf*100,1)`%.
+
+So we will use it to predict the classe 20 cases in the original test data set
+
+```{r final_prediction, echo = TRUE}
+predict(mod_rf,test_data)
+```
+
+
+## Conclusion
+
+In this project we have study the data from healthy devices and manage to fit 
+an model, using the random forest method, which can give us with `r round(accuracy_rf*100,1)`% 
+of accuracy, the manner in which they did a barbell lifts excercise.
